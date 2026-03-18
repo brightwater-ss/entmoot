@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-from .fact import FactGroup
+from .value import ValueGroup
 
 
 class EntitySummary(BaseModel):
@@ -22,4 +22,4 @@ class EntityResponse(BaseModel):
 
 
 class EntityWithFacts(EntityResponse):
-    fact_groups: list[FactGroup]
+    value_groups: list[ValueGroup]

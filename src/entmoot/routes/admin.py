@@ -11,10 +11,10 @@ from entmoot.models import (
     CreateAttributeRequest,
     CreateDomainRequest,
     CreateEntityRequest,
-    CreateFactRequest,
+    CreateValueRequest,
     DomainResponse,
     EntityResponse,
-    FactResponse,
+    ValueResponse,
 )
 
 
@@ -149,8 +149,8 @@ class AdminController(Controller):
             created_at=now,
         )
 
-    @post("/facts")
-    async def create_fact(self, request: Request, data: CreateFactRequest) -> FactResponse:
+    @post("/values")
+    async def create_value(self, request: Request, data: CreateValueRequest) -> ValueResponse:
         graph: AsyncGraph = request.app.state.graph
 
         entity_check = await graph.run(
@@ -165,14 +165,14 @@ class AdminController(Controller):
         if not attr_check:
             raise NotFoundException(detail=f"Attribute '{data.attribute_id}' not found")
 
-        fact_id = str(uuid4())
+        value_id = str(uuid4())
         now = _now()
 
         await graph.run(
             """
             MATCH (e:Entity {id: $entity_id})
             MATCH (a:Attribute {id: $attribute_id})
-            CREATE (f:Fact {
+            CREATE (v:Value {
               id: $id,
               value: $value,
               source_type: $source_type,
@@ -180,11 +180,11 @@ class AdminController(Controller):
               visibility: 'public',
               contributed_at: $now
             })
-            CREATE (f)-[:DESCRIBES]->(e)
-            CREATE (f)-[:FOR_ATTRIBUTE]->(a)
+            CREATE (v)-[:DESCRIBES]->(e)
+            CREATE (v)-[:FOR_ATTRIBUTE]->(a)
             """,
             {
-                "id": fact_id,
+                "id": value_id,
                 "entity_id": data.entity_id,
                 "attribute_id": data.attribute_id,
                 "value": data.value,
@@ -197,20 +197,20 @@ class AdminController(Controller):
         if data.source_url:
             await graph.run(
                 """
-                MATCH (f:Fact {id: $fact_id})
+                MATCH (v:Value {id: $value_id})
                 CREATE (s:Source {id: $source_id, href: $href, accessed_at: $now})
-                CREATE (f)-[:SOURCED_FROM]->(s)
+                CREATE (v)-[:SOURCED_FROM]->(s)
                 """,
                 {
-                    "fact_id": fact_id,
+                    "value_id": value_id,
                     "source_id": str(uuid4()),
                     "href": data.source_url,
                     "now": now,
                 },
             )
 
-        return FactResponse(
-            id=fact_id,
+        return ValueResponse(
+            id=value_id,
             value=data.value,
             source_type=data.source_type,
             source_url=data.source_url,

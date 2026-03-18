@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 
-from .fact import SourceType
+from .value import SourceType
 
 
 class CreateDomainRequest(BaseModel):
@@ -22,7 +22,7 @@ class CreateAttributeRequest(BaseModel):
     domain_slugs: list[str] = Field(default_factory=list)
 
 
-class CreateFactRequest(BaseModel):
+class CreateValueRequest(BaseModel):
     entity_id: str
     attribute_id: str
     value: str

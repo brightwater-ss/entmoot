@@ -7,7 +7,7 @@ _UNIQUE_CONSTRAINTS = [
     ("Attribute", "id"),
     ("Domain", "id"),
     ("Domain", "slug"),
-    ("Fact", "id"),
+    ("Value", "id"),
     ("Organization", "id"),
     ("Organization", "slug"),
     ("Source", "id"),

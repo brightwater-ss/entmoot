@@ -67,7 +67,7 @@ async def test_create_fact_and_conflict_detection(client, admin_headers):
 
     for value in ["99.9", "99.99"]:
         resp = await client.post(
-            "/admin/facts",
+            "/admin/values",
             json={
                 "entity_id": entity_id,
                 "attribute_id": attribute_id,
@@ -82,10 +82,10 @@ async def test_create_fact_and_conflict_detection(client, admin_headers):
     resp = await client.get(f"/entities/{entity_id}")
     assert resp.status_code == 200
     data = resp.json()
-    groups = data["fact_groups"]
+    groups = data["value_groups"]
     assert len(groups) == 1
     assert groups[0]["conflict"] is True
-    assert len(groups[0]["facts"]) == 2
+    assert len(groups[0]["values"]) == 2
 
 
 @pytest.mark.asyncio

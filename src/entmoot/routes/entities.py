@@ -3,7 +3,7 @@ from litestar.exceptions import NotFoundException
 
 from entmoot.graph import AsyncGraph
 from entmoot.models import EntitySummary, EntityWithFacts
-from entmoot.models.fact import SOURCE_TYPE_ORDER, FactGroup, FactResponse
+from entmoot.models.value import SOURCE_TYPE_ORDER, ValueGroup, ValueResponse
 
 
 class EntityController(Controller):
@@ -77,23 +77,23 @@ class EntityController(Controller):
                  collect(DISTINCT d.name) AS domains,
                  org.name AS claimed_by,
                  merged.id AS merged_into
-            OPTIONAL MATCH (f:Fact)-[:DESCRIBES]->(e)
-            WHERE f.visibility = 'public'
-            OPTIONAL MATCH (f)-[:FOR_ATTRIBUTE]->(a:Attribute)
+            OPTIONAL MATCH (v:Value)-[:DESCRIBES]->(e)
+            WHERE v.visibility = 'public'
+            OPTIONAL MATCH (v)-[:FOR_ATTRIBUTE]->(a:Attribute)
             WHERE $attribute IS NULL OR a.id = $attribute
-            OPTIONAL MATCH (f)-[:SOURCED_FROM]->(s:Source)
+            OPTIONAL MATCH (v)-[:SOURCED_FROM]->(s:Source)
             RETURN e, domains, claimed_by, merged_into,
                    collect({
-                     fact_id: f.id,
-                     fact_value: f.value,
-                     fact_source_type: f.source_type,
-                     fact_confidence: f.confidence,
-                     fact_contributed_at: f.contributed_at,
-                     fact_org_id: f.org_id,
+                     value_id: v.id,
+                     value_value: v.value,
+                     value_source_type: v.source_type,
+                     value_confidence: v.confidence,
+                     value_contributed_at: v.contributed_at,
+                     value_org_id: v.org_id,
                      attribute_id: a.id,
                      attribute_name: a.name,
                      source_url: s.href
-                   }) AS fact_rows
+                   }) AS value_rows
             """,
             {"id": entity_id, "attribute": attribute},
         )
@@ -104,47 +104,47 @@ class EntityController(Controller):
         row = records[0]
         entity = row["e"]
 
-        # Group facts by attribute, compute conflict per group
+        # Group values by attribute, compute conflict per group
         groups: dict[str, dict] = {}
-        for fr in row["fact_rows"] or []:
-            if not fr.get("fact_id") or not fr.get("attribute_id"):
+        for vr in row["value_rows"] or []:
+            if not vr.get("value_id") or not vr.get("attribute_id"):
                 continue
-            attr_id = fr["attribute_id"]
+            attr_id = vr["attribute_id"]
             if attr_id not in groups:
                 groups[attr_id] = {
                     "attribute_id": attr_id,
-                    "attribute_name": fr["attribute_name"],
-                    "facts": [],
+                    "attribute_name": vr["attribute_name"],
+                    "values": [],
                 }
-            groups[attr_id]["facts"].append(
-                FactResponse(
-                    id=fr["fact_id"],
-                    value=fr["fact_value"],
-                    source_type=fr["fact_source_type"],
-                    source_url=fr.get("source_url"),
-                    confidence=fr["fact_confidence"],
-                    org_id=fr.get("fact_org_id"),
-                    contributed_at=fr["fact_contributed_at"],
+            groups[attr_id]["values"].append(
+                ValueResponse(
+                    id=vr["value_id"],
+                    value=vr["value_value"],
+                    source_type=vr["value_source_type"],
+                    source_url=vr.get("source_url"),
+                    confidence=vr["value_confidence"],
+                    org_id=vr.get("value_org_id"),
+                    contributed_at=vr["value_contributed_at"],
                     conflict=False,
                 )
             )
 
-        fact_groups: list[FactGroup] = []
+        value_groups: list[ValueGroup] = []
         for g in groups.values():
-            values = {fact.value for fact in g["facts"]}
-            conflict = len(values) > 1
-            for fact in g["facts"]:
-                fact.conflict = conflict
-            g["facts"].sort(
-                key=lambda f: SOURCE_TYPE_ORDER.index(f.source_type)
-                if f.source_type in SOURCE_TYPE_ORDER
+            distinct_values = {v.value for v in g["values"]}
+            conflict = len(distinct_values) > 1
+            for v in g["values"]:
+                v.conflict = conflict
+            g["values"].sort(
+                key=lambda v: SOURCE_TYPE_ORDER.index(v.source_type)
+                if v.source_type in SOURCE_TYPE_ORDER
                 else 99
             )
-            fact_groups.append(
-                FactGroup(
+            value_groups.append(
+                ValueGroup(
                     attribute_id=g["attribute_id"],
                     attribute_name=g["attribute_name"],
-                    facts=g["facts"],
+                    values=g["values"],
                     conflict=conflict,
                 )
             )
@@ -158,5 +158,5 @@ class EntityController(Controller):
             merged_into=row.get("merged_into"),
             created_at=entity["created_at"],
             updated_at=entity["updated_at"],
-            fact_groups=fact_groups,
+            value_groups=value_groups,
         )
