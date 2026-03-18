@@ -12,7 +12,7 @@ _graph = None
 async def init_driver():
     global _db, _graph
     _db = FalkorDB(host=settings.falkordb_host, port=settings.falkordb_port)
-    _graph = await _db.select_graph(settings.falkordb_graph)
+    _graph = _db.select_graph(settings.falkordb_graph)
     return AsyncGraph(_graph)
 
 

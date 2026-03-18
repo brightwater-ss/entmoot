@@ -1,4 +1,4 @@
-import asyncio
+import socket
 
 import pytest
 from litestar.testing import AsyncTestClient
@@ -11,20 +11,11 @@ from entmoot.graph import close_driver, init_driver, init_schema
 def falkordb_available() -> bool:
     """Return True if a FalkorDB server is reachable at the configured host/port."""
     try:
-        from falkordb.asyncio import FalkorDB
-
-        async def _check() -> bool:
-            db = FalkorDB(host=settings.falkordb_host, port=settings.falkordb_port)
-            try:
-                await db.list_graphs()
-                return True
-            except Exception:
-                return False
-            finally:
-                await db.aclose()
-
-        return asyncio.run(_check())
-    except Exception:
+        with socket.create_connection(
+            (settings.falkordb_host, settings.falkordb_port), timeout=1
+        ):
+            return True
+    except OSError:
         return False
 
 
@@ -36,6 +27,7 @@ requires_falkordb = pytest.mark.skipif(
 
 @pytest.fixture(scope="session")
 async def graph():
+    """Direct graph handle for schema-level tests (no HTTP layer)."""
     try:
         g = await init_driver()
         await init_schema(g)
@@ -46,10 +38,13 @@ async def graph():
 
 
 @pytest.fixture()
-async def client(graph):
-    test_app = create_app(connect_db=False)
-    test_app.state.graph = graph
-    async with AsyncTestClient(app=test_app) as c:
+async def client():
+    """HTTP test client — app manages its own FalkorDB connection so the
+    connection is created in the same event loop that handles requests."""
+    if not falkordb_available():
+        pytest.skip("FalkorDB not available — start with: docker run -p 6379:6379 falkordb/falkordb")
+    test_app = create_app(connect_db=True)
+    async with AsyncTestClient(app=test_app, raise_server_exceptions=True) as c:
         yield c
 
 
