@@ -11,3 +11,4 @@ Status: `proposed → accepted → deprecated`
 
 | # | Title | Status |
 |---|-------|--------|
+| [001](./001-graph-schema.md) | Graph Schema Design | accepted |
