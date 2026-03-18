@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from litestar.testing import AsyncTestClient
 
@@ -5,54 +7,48 @@ from entmoot.app import create_app
 from entmoot.config import settings
 from entmoot.graph import close_driver, init_driver, init_schema
 
-# --- Neo4j availability ---
 
-def neo4j_available() -> bool:
-    """Return True if a Neo4j instance is reachable at the configured URI."""
-    import asyncio
+def falkordb_available() -> bool:
+    """Return True if a FalkorDB server is reachable at the configured host/port."""
+    try:
+        from falkordb.asyncio import FalkorDB
 
-    from neo4j import AsyncGraphDatabase
+        async def _check() -> bool:
+            db = FalkorDB(host=settings.falkordb_host, port=settings.falkordb_port)
+            try:
+                await db.list_graphs()
+                return True
+            except Exception:
+                return False
+            finally:
+                await db.aclose()
 
-    async def _check() -> bool:
-        driver = AsyncGraphDatabase.driver(
-            settings.neo4j_uri,
-            auth=(settings.neo4j_user, settings.neo4j_password),
-        )
-        try:
-            await driver.verify_connectivity()
-            return True
-        except Exception:
-            return False
-        finally:
-            await driver.close()
-
-    return asyncio.run(_check())
+        return asyncio.run(_check())
+    except Exception:
+        return False
 
 
-requires_neo4j = pytest.mark.skipif(
-    not neo4j_available(),
-    reason="Neo4j not available at configured URI",
+requires_falkordb = pytest.mark.skipif(
+    not falkordb_available(),
+    reason="FalkorDB not available — start with: docker run -p 6379:6379 falkordb/falkordb",
 )
 
-# --- Fixtures ---
 
 @pytest.fixture(scope="session")
-async def neo4j_driver():
-    """Session-scoped driver. Skips if Neo4j is not reachable."""
+async def graph():
     try:
-        driver = await init_driver()
-        await init_schema(driver)
+        g = await init_driver()
+        await init_schema(g)
     except Exception as exc:
-        pytest.skip(f"Neo4j not available: {exc}")
-    yield driver
+        pytest.skip(f"FalkorDB not available: {exc}")
+    yield g
     await close_driver()
 
 
 @pytest.fixture()
-async def client(neo4j_driver):
-    """AsyncTestClient backed by the test Neo4j driver (no startup hooks)."""
+async def client(graph):
     test_app = create_app(connect_db=False)
-    test_app.state.neo4j = neo4j_driver
+    test_app.state.graph = graph
     async with AsyncTestClient(app=test_app) as c:
         yield c
 

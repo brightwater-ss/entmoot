@@ -11,16 +11,18 @@ It stores entities (alternatives), attributes (spec dimensions), and canonical f
 ```
 src/
   entmoot/
-    app.py         Litestar application entry point
+    app.py         Litestar application entry point; create_app() factory
+    config.py      Settings from environment variables (pydantic-settings)
+    guards.py      Litestar guards (admin API key check)
     routes/        Route handlers, one file per resource
-    graph/         Neo4j driver, query helpers, schema init
+    graph/         FalkorDB driver, AsyncGraph wrapper, schema init
     pipeline/      Ingestion workers: scraper, ETL, AI extraction
     models/        Pydantic request/response models
 tests/
 docs/
   adr/             Architecture Decision Records
   prd/             Product Requirements Documents
-  CHANGELOG.md
+CHANGELOG.md
 ```
 
 ## Tech stack
@@ -29,7 +31,8 @@ docs/
 |---|---|
 | Language | Python 3.12+, uv |
 | Framework | Litestar 2 |
-| Graph DB | Neo4j (Community Edition for dev; Aura for cloud) |
+| Graph DB | FalkorDB (server via Docker; FalkorDBLite for embedded — planned) |
+| Driver | `falkordb` Python package (`falkordb.asyncio` for async) |
 | Validation | Pydantic v2 |
 | HTTP client | httpx |
 | Linting | Ruff |
@@ -44,25 +47,24 @@ uv sync --extra dev
 # Copy and edit environment
 cp .env.example .env
 
-# Run dev server (requires Neo4j running locally or via Docker)
+# Start FalkorDB
+docker run --name entmoot-falkordb -p 6379:6379 falkordb/falkordb
+
+# Run dev server
 uv run uvicorn entmoot.app:app --reload --port 7000
 
 # Lint
 uv run ruff check src/
 
-# Test
+# Test (health test runs without DB; others require FalkorDB)
 uv run pytest
 ```
 
-## Neo4j local setup
+## Graph access pattern
 
-```bash
-docker run \
-  --name entmoot-neo4j \
-  -p 7474:7474 -p 7687:7687 \
-  -e NEO4J_AUTH=neo4j/changeme \
-  neo4j:community
-```
+All routes access the graph via `request.app.state.graph` (an `AsyncGraph` instance).
+Do not import the driver or graph globals directly in route handlers.
+In tests, inject the graph via the `client` fixture in `conftest.py`.
 
 ## Code conventions
 
@@ -71,7 +73,6 @@ docker run \
 - `src` layout (`src/entmoot/`)
 - Test files in `tests/`, named `test_*.py`
 - Named exports only — avoid star imports
-- No default exports
 
 ## Documentation
 

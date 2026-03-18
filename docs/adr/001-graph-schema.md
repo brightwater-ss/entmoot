@@ -5,9 +5,14 @@
 
 ## Context
 
-Entmoot stores entities, attributes, and facts in a graph database (Neo4j, per ADR-005 in
+Entmoot stores entities, attributes, and facts in a graph database (FalkorDB, per ADR-005 in
 the Decider repo). This ADR defines the node types, relationship types, and schema constraints,
 and records the reasoning behind key design decisions.
+
+**Implementation note:** The `falkordb` Python package (v1.6.0) provides a native async client
+via `falkordb.asyncio`. The `FalkorDBLite` embedded variant referenced in ADR-005 is not yet
+available in this package version; until it ships, the FalkorDB server (Docker) is required for
+local development and integration tests.
 
 ## Node Types
 
@@ -93,36 +98,22 @@ Properties:
 
 ## Constraints and Indexes
 
-```cypher
-CREATE CONSTRAINT entity_id IF NOT EXISTS
-  FOR (n:Entity) REQUIRE n.id IS UNIQUE;
+Applied via the `falkordb` Python API in `graph/schema.py`:
 
-CREATE CONSTRAINT attribute_id IF NOT EXISTS
-  FOR (n:Attribute) REQUIRE n.id IS UNIQUE;
+```python
+# Unique constraints (also creates backing range index)
+graph.create_node_unique_constraint("Entity", "id")
+graph.create_node_unique_constraint("Attribute", "id")
+graph.create_node_unique_constraint("Domain", "id")
+graph.create_node_unique_constraint("Domain", "slug")
+graph.create_node_unique_constraint("Fact", "id")
+graph.create_node_unique_constraint("Organization", "id")
+graph.create_node_unique_constraint("Organization", "slug")
+graph.create_node_unique_constraint("Source", "id")
 
-CREATE CONSTRAINT domain_id IF NOT EXISTS
-  FOR (n:Domain) REQUIRE n.id IS UNIQUE;
-
-CREATE CONSTRAINT domain_slug IF NOT EXISTS
-  FOR (n:Domain) REQUIRE n.slug IS UNIQUE;
-
-CREATE CONSTRAINT fact_id IF NOT EXISTS
-  FOR (n:Fact) REQUIRE n.id IS UNIQUE;
-
-CREATE CONSTRAINT org_id IF NOT EXISTS
-  FOR (n:Organization) REQUIRE n.id IS UNIQUE;
-
-CREATE CONSTRAINT org_slug IF NOT EXISTS
-  FOR (n:Organization) REQUIRE n.slug IS UNIQUE;
-
-CREATE CONSTRAINT source_id IF NOT EXISTS
-  FOR (n:Source) REQUIRE n.id IS UNIQUE;
-
-CREATE FULLTEXT INDEX entitySearch IF NOT EXISTS
-  FOR (n:Entity) ON EACH [n.name, n.aliases];
-
-CREATE FULLTEXT INDEX attributeSearch IF NOT EXISTS
-  FOR (n:Attribute) ON EACH [n.name];
+# Full-text indexes for entity and attribute search
+graph.create_node_fulltext_index("Entity", "name", "aliases")
+graph.create_node_fulltext_index("Attribute", "name")
 ```
 
 ## Key Design Decisions

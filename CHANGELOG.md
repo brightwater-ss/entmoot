@@ -22,3 +22,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Admin guard: `X-Admin-Key` header checked against `ADMIN_API_KEY` env var
 - `create_app(connect_db)` factory for test isolation
 - Tests: health (no DB), schema idempotency, admin seed + conflict detection, guard rejection
+
+### Changed
+- Replaced Neo4j with FalkorDB per ADR-005; uses native async client (`falkordb.asyncio`)
+- Graph driver rewritten as `AsyncGraph` wrapper around `falkordb.asyncio.Graph`
+- Schema init uses FalkorDB Python API (`create_node_unique_constraint`, `create_node_fulltext_index`)
+- Config vars renamed from `NEO4J_*` to `FALKORDB_*`; default port 6379
+- Integration tests skip gracefully when FalkorDB server is unavailable

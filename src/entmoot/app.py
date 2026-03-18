@@ -12,9 +12,9 @@ async def health() -> dict[str, str]:
 
 def create_app(connect_db: bool = True) -> Litestar:
     async def on_startup(app: Litestar) -> None:
-        driver = await init_driver()
-        await init_schema(driver)
-        app.state.neo4j = driver
+        graph = await init_driver()
+        await init_schema(graph)
+        app.state.graph = graph
 
     async def on_shutdown(app: Litestar) -> None:
         await close_driver()

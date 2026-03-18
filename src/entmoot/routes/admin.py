@@ -3,8 +3,8 @@ from uuid import uuid4
 
 from litestar import Controller, Request, post
 from litestar.exceptions import NotFoundException
-from neo4j import AsyncDriver
 
+from entmoot.graph import AsyncGraph
 from entmoot.guards import admin_guard
 from entmoot.models import (
     AttributeResponse,
@@ -27,247 +27,195 @@ class AdminController(Controller):
     guards = [admin_guard]
 
     @post("/domains")
-    async def create_domain(
-        self,
-        request: Request,
-        data: CreateDomainRequest,
-    ) -> DomainResponse:
-        driver: AsyncDriver = request.app.state.neo4j
+    async def create_domain(self, request: Request, data: CreateDomainRequest) -> DomainResponse:
+        graph: AsyncGraph = request.app.state.graph
         domain_id = str(uuid4())
         now = _now()
 
-        async with driver.session() as session:
-            if data.parent_slug:
-                result = await session.run(
-                    """
-                    MATCH (parent:Domain {slug: $parent_slug})
-                    CREATE (d:Domain {id: $id, name: $name, slug: $slug, created_at: $now})
-                    CREATE (parent)-[:PARENT_OF]->(d)
-                    RETURN d
-                    """,
-                    {
-                        "id": domain_id,
-                        "name": data.name,
-                        "slug": data.slug,
-                        "now": now,
-                        "parent_slug": data.parent_slug,
-                    },
-                )
-            else:
-                result = await session.run(
-                    """
-                    CREATE (d:Domain {id: $id, name: $name, slug: $slug, created_at: $now})
-                    RETURN d
-                    """,
-                    {"id": domain_id, "name": data.name, "slug": data.slug, "now": now},
-                )
-            records = await result.data()
+        await graph.run(
+            "CREATE (:Domain {id: $id, name: $name, slug: $slug, created_at: $now})",
+            {"id": domain_id, "name": data.name, "slug": data.slug, "now": now},
+        )
 
-        d = records[0]["d"]
-        return DomainResponse(id=d["id"], name=d["name"], slug=d["slug"])
+        if data.parent_slug:
+            await graph.run(
+                """
+                MATCH (parent:Domain {slug: $parent_slug})
+                MATCH (d:Domain {id: $id})
+                CREATE (parent)-[:PARENT_OF]->(d)
+                """,
+                {"parent_slug": data.parent_slug, "id": domain_id},
+            )
+
+        return DomainResponse(id=domain_id, name=data.name, slug=data.slug)
 
     @post("/entities")
-    async def create_entity(
-        self,
-        request: Request,
-        data: CreateEntityRequest,
-    ) -> EntityResponse:
-        driver: AsyncDriver = request.app.state.neo4j
+    async def create_entity(self, request: Request, data: CreateEntityRequest) -> EntityResponse:
+        graph: AsyncGraph = request.app.state.graph
         entity_id = str(uuid4())
         now = _now()
 
-        async with driver.session() as session:
-            result = await session.run(
-                """
-                CREATE (e:Entity {
-                  id: $id,
-                  name: $name,
-                  aliases: $aliases,
-                  visibility: 'public',
-                  created_at: $now,
-                  updated_at: $now
-                })
-                WITH e
-                UNWIND CASE WHEN $domain_slugs = [] THEN [null] ELSE $domain_slugs END AS slug
-                OPTIONAL MATCH (d:Domain {slug: slug})
-                FOREACH (_ IN CASE WHEN d IS NOT NULL THEN [1] ELSE [] END |
-                  CREATE (e)-[:BELONGS_TO]->(d)
-                )
-                WITH e
-                OPTIONAL MATCH (e)-[:BELONGS_TO]->(d:Domain)
-                RETURN e, collect(d.name) AS domains
-                """,
-                {
-                    "id": entity_id,
-                    "name": data.name,
-                    "aliases": data.aliases,
-                    "domain_slugs": data.domain_slugs,
-                    "now": now,
-                },
-            )
-            records = await result.data()
+        await graph.run(
+            """
+            CREATE (:Entity {
+              id: $id,
+              name: $name,
+              aliases: $aliases,
+              visibility: 'public',
+              created_at: $now,
+              updated_at: $now
+            })
+            """,
+            {"id": entity_id, "name": data.name, "aliases": data.aliases, "now": now},
+        )
 
-        row = records[0]
-        e = row["e"]
+        for slug in data.domain_slugs:
+            await graph.run(
+                """
+                MATCH (e:Entity {id: $entity_id})
+                MATCH (d:Domain {slug: $slug})
+                CREATE (e)-[:BELONGS_TO]->(d)
+                """,
+                {"entity_id": entity_id, "slug": slug},
+            )
+
+        domain_records = await graph.run(
+            "MATCH (e:Entity {id: $id})-[:BELONGS_TO]->(d:Domain) RETURN d.name AS name",
+            {"id": entity_id},
+        )
+        domains = [r["name"] for r in domain_records]
+
         return EntityResponse(
-            id=e["id"],
-            name=e["name"],
-            aliases=e.get("aliases") or [],
-            domains=row["domains"],
+            id=entity_id,
+            name=data.name,
+            aliases=data.aliases,
+            domains=domains,
             claimed_by=None,
             merged_into=None,
-            created_at=e["created_at"],
-            updated_at=e["updated_at"],
+            created_at=now,
+            updated_at=now,
         )
 
     @post("/attributes")
     async def create_attribute(
-        self,
-        request: Request,
-        data: CreateAttributeRequest,
+        self, request: Request, data: CreateAttributeRequest
     ) -> AttributeResponse:
-        driver: AsyncDriver = request.app.state.neo4j
+        graph: AsyncGraph = request.app.state.graph
         attribute_id = str(uuid4())
         now = _now()
 
-        async with driver.session() as session:
-            result = await session.run(
-                """
-                CREATE (a:Attribute {
-                  id: $id,
-                  name: $name,
-                  description: $description,
-                  unit: $unit,
-                  visibility: 'public',
-                  created_at: $now
-                })
-                WITH a
-                UNWIND CASE WHEN $domain_slugs = [] THEN [null] ELSE $domain_slugs END AS slug
-                OPTIONAL MATCH (d:Domain {slug: slug})
-                FOREACH (_ IN CASE WHEN d IS NOT NULL THEN [1] ELSE [] END |
-                  CREATE (a)-[:APPLICABLE_TO]->(d)
-                )
-                WITH a
-                OPTIONAL MATCH (a)-[:APPLICABLE_TO]->(d:Domain)
-                RETURN a, collect(d.name) AS domains
-                """,
-                {
-                    "id": attribute_id,
-                    "name": data.name,
-                    "description": data.description,
-                    "unit": data.unit,
-                    "domain_slugs": data.domain_slugs,
-                    "now": now,
-                },
-            )
-            records = await result.data()
+        await graph.run(
+            """
+            CREATE (:Attribute {
+              id: $id,
+              name: $name,
+              description: $description,
+              unit: $unit,
+              visibility: 'public',
+              created_at: $now
+            })
+            """,
+            {
+                "id": attribute_id,
+                "name": data.name,
+                "description": data.description,
+                "unit": data.unit,
+                "now": now,
+            },
+        )
 
-        row = records[0]
-        a = row["a"]
+        for slug in data.domain_slugs:
+            await graph.run(
+                """
+                MATCH (a:Attribute {id: $attribute_id})
+                MATCH (d:Domain {slug: $slug})
+                CREATE (a)-[:APPLICABLE_TO]->(d)
+                """,
+                {"attribute_id": attribute_id, "slug": slug},
+            )
+
+        domain_records = await graph.run(
+            "MATCH (a:Attribute {id: $id})-[:APPLICABLE_TO]->(d:Domain) RETURN d.name AS name",
+            {"id": attribute_id},
+        )
+        domains = [r["name"] for r in domain_records]
+
         return AttributeResponse(
-            id=a["id"],
-            name=a["name"],
-            description=a.get("description"),
-            unit=a.get("unit"),
-            domains=row["domains"],
-            created_at=a["created_at"],
+            id=attribute_id,
+            name=data.name,
+            description=data.description,
+            unit=data.unit,
+            domains=domains,
+            created_at=now,
         )
 
     @post("/facts")
-    async def create_fact(
-        self,
-        request: Request,
-        data: CreateFactRequest,
-    ) -> FactResponse:
-        driver: AsyncDriver = request.app.state.neo4j
+    async def create_fact(self, request: Request, data: CreateFactRequest) -> FactResponse:
+        graph: AsyncGraph = request.app.state.graph
+
+        entity_check = await graph.run(
+            "MATCH (e:Entity {id: $id}) RETURN e.id AS id", {"id": data.entity_id}
+        )
+        if not entity_check:
+            raise NotFoundException(detail=f"Entity '{data.entity_id}' not found")
+
+        attr_check = await graph.run(
+            "MATCH (a:Attribute {id: $id}) RETURN a.id AS id", {"id": data.attribute_id}
+        )
+        if not attr_check:
+            raise NotFoundException(detail=f"Attribute '{data.attribute_id}' not found")
+
         fact_id = str(uuid4())
         now = _now()
 
-        async with driver.session() as session:
-            # Verify entity and attribute exist
-            check = await session.run(
+        await graph.run(
+            """
+            MATCH (e:Entity {id: $entity_id})
+            MATCH (a:Attribute {id: $attribute_id})
+            CREATE (f:Fact {
+              id: $id,
+              value: $value,
+              source_type: $source_type,
+              confidence: $confidence,
+              visibility: 'public',
+              contributed_at: $now
+            })
+            CREATE (f)-[:DESCRIBES]->(e)
+            CREATE (f)-[:FOR_ATTRIBUTE]->(a)
+            """,
+            {
+                "id": fact_id,
+                "entity_id": data.entity_id,
+                "attribute_id": data.attribute_id,
+                "value": data.value,
+                "source_type": data.source_type,
+                "confidence": data.confidence,
+                "now": now,
+            },
+        )
+
+        if data.source_url:
+            await graph.run(
                 """
-                OPTIONAL MATCH (e:Entity {id: $entity_id})
-                OPTIONAL MATCH (a:Attribute {id: $attribute_id})
-                RETURN e IS NOT NULL AS entity_exists, a IS NOT NULL AS attribute_exists
+                MATCH (f:Fact {id: $fact_id})
+                CREATE (s:Source {id: $source_id, href: $href, accessed_at: $now})
+                CREATE (f)-[:SOURCED_FROM]->(s)
                 """,
-                {"entity_id": data.entity_id, "attribute_id": data.attribute_id},
+                {
+                    "fact_id": fact_id,
+                    "source_id": str(uuid4()),
+                    "href": data.source_url,
+                    "now": now,
+                },
             )
-            check_row = (await check.data())[0]
-            if not check_row["entity_exists"]:
-                raise NotFoundException(detail=f"Entity '{data.entity_id}' not found")
-            if not check_row["attribute_exists"]:
-                raise NotFoundException(detail=f"Attribute '{data.attribute_id}' not found")
 
-            # Create fact with source node if URL provided
-            if data.source_url:
-                result = await session.run(
-                    """
-                    MATCH (e:Entity {id: $entity_id})
-                    MATCH (a:Attribute {id: $attribute_id})
-                    CREATE (f:Fact {
-                      id: $id,
-                      value: $value,
-                      source_type: $source_type,
-                      confidence: $confidence,
-                      visibility: 'public',
-                      contributed_at: $now
-                    })
-                    CREATE (f)-[:DESCRIBES]->(e)
-                    CREATE (f)-[:FOR_ATTRIBUTE]->(a)
-                    CREATE (s:Source {id: $source_id, href: $source_url, accessed_at: $now})
-                    CREATE (f)-[:SOURCED_FROM]->(s)
-                    RETURN f
-                    """,
-                    {
-                        "id": fact_id,
-                        "entity_id": data.entity_id,
-                        "attribute_id": data.attribute_id,
-                        "value": data.value,
-                        "source_type": data.source_type,
-                        "confidence": data.confidence,
-                        "source_url": data.source_url,
-                        "source_id": str(uuid4()),
-                        "now": now,
-                    },
-                )
-            else:
-                result = await session.run(
-                    """
-                    MATCH (e:Entity {id: $entity_id})
-                    MATCH (a:Attribute {id: $attribute_id})
-                    CREATE (f:Fact {
-                      id: $id,
-                      value: $value,
-                      source_type: $source_type,
-                      confidence: $confidence,
-                      visibility: 'public',
-                      contributed_at: $now
-                    })
-                    CREATE (f)-[:DESCRIBES]->(e)
-                    CREATE (f)-[:FOR_ATTRIBUTE]->(a)
-                    RETURN f
-                    """,
-                    {
-                        "id": fact_id,
-                        "entity_id": data.entity_id,
-                        "attribute_id": data.attribute_id,
-                        "value": data.value,
-                        "source_type": data.source_type,
-                        "confidence": data.confidence,
-                        "now": now,
-                    },
-                )
-            records = await result.data()
-
-        f = records[0]["f"]
         return FactResponse(
-            id=f["id"],
-            value=f["value"],
-            source_type=f["source_type"],
+            id=fact_id,
+            value=data.value,
+            source_type=data.source_type,
             source_url=data.source_url,
-            confidence=f["confidence"],
+            confidence=data.confidence,
             org_id=None,
-            contributed_at=f["contributed_at"],
+            contributed_at=now,
             conflict=False,
         )
