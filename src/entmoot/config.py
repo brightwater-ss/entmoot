@@ -13,5 +13,8 @@ class Settings(BaseSettings):
     api_port: int = 7000
     debug: bool = False
 
+    # Admin
+    admin_api_key: str = "changeme-admin"
+
 
 settings = Settings()
