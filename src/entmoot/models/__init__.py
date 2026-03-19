@@ -3,6 +3,8 @@ from .admin import (
     CreateDomainRequest,
     CreateEntityRequest,
     CreateValueRequest,
+    WikidataImportRequest,
+    WikidataImportResult,
 )
 from .attribute import AttributeResponse, AttributeSummary
 from .domain import DomainResponse
@@ -14,6 +16,8 @@ __all__ = [
     "CreateDomainRequest",
     "CreateEntityRequest",
     "CreateValueRequest",
+    "WikidataImportRequest",
+    "WikidataImportResult",
     "AttributeResponse",
     "AttributeSummary",
     "DomainResponse",

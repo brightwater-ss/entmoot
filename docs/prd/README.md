@@ -11,3 +11,4 @@ Status: `draft → approved → shipped`
 
 | # | Feature | Status |
 |---|---------|--------|
+| 001 | Wikidata Import Pipeline | approved |

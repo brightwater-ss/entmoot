@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
+import httpx
 from litestar import Controller, Request, post
 from litestar.exceptions import NotFoundException
 
@@ -15,7 +16,10 @@ from entmoot.models import (
     DomainResponse,
     EntityResponse,
     ValueResponse,
+    WikidataImportRequest,
+    WikidataImportResult,
 )
+from entmoot.pipeline import WikidataImporter
 
 
 def _now() -> str:
@@ -219,3 +223,12 @@ class AdminController(Controller):
             contributed_at=now,
             conflict=False,
         )
+
+    @post("/import/wikidata")
+    async def import_wikidata(
+        self, request: Request, data: WikidataImportRequest
+    ) -> WikidataImportResult:
+        graph: AsyncGraph = request.app.state.graph
+        async with httpx.AsyncClient() as http:
+            importer = WikidataImporter(graph=graph, http=http)
+            return await importer.run(data)
