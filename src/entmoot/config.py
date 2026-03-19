@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,6 +19,10 @@ class Settings(BaseSettings):
 
     # Admin
     admin_api_key: str = "changeme-admin"
+
+    # Pipeline runner: "null" = in-process (default), "dagster" = Dagster orchestrator
+    # Set PIPELINE_RUNNER=dagster and install `uv sync --extra dagster` to enable Dagster.
+    pipeline_runner: Literal["null", "dagster"] = "null"
 
 
 settings = Settings()

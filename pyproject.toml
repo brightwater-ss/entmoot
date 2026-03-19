@@ -18,6 +18,10 @@ dev = [
     "pytest-asyncio>=0.23",
     "ruff>=0.4",
 ]
+dagster = [
+    "dagster>=1.9",
+    "dagster-webserver>=1.9",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -31,6 +35,9 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
+
+[tool.dagster]
+module_name = "entmoot.pipeline.dagster.definitions"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

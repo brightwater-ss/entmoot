@@ -1,8 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-import httpx
-from litestar import Controller, Request, post
+from litestar import Controller, Request, get, post
 from litestar.exceptions import NotFoundException
 
 from entmoot.graph import AsyncGraph
@@ -17,9 +16,8 @@ from entmoot.models import (
     EntityResponse,
     ValueResponse,
     WikidataImportRequest,
-    WikidataImportResult,
 )
-from entmoot.pipeline import WikidataImporter
+from entmoot.pipeline.runner import PipelineRun, PipelineRunner
 
 
 def _now() -> str:
@@ -227,8 +225,14 @@ class AdminController(Controller):
     @post("/import/wikidata")
     async def import_wikidata(
         self, request: Request, data: WikidataImportRequest
-    ) -> WikidataImportResult:
-        graph: AsyncGraph = request.app.state.graph
-        async with httpx.AsyncClient() as http:
-            importer = WikidataImporter(graph=graph, http=http)
-            return await importer.run(data)
+    ) -> PipelineRun:
+        runner: PipelineRunner = request.app.state.pipeline_runner
+        return await runner.trigger("wikidata_import", data.model_dump())
+
+    @get("/pipelines/runs/{run_id:str}")
+    async def get_pipeline_run(self, request: Request, run_id: str) -> PipelineRun:
+        runner: PipelineRunner = request.app.state.pipeline_runner
+        try:
+            return await runner.get_run(run_id)
+        except KeyError:
+            raise NotFoundException(detail=f"Pipeline run '{run_id}' not found")

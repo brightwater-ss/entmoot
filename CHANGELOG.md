@@ -26,6 +26,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `create_app(connect_db)` factory for test isolation
 - Tests: health (no DB), schema idempotency, admin seed + conflict detection, guard rejection
 - PRD-001: Wikidata Import Pipeline
+- ADR-002: Pipeline Orchestration with Dagster and Adapter Pattern
+- `PipelineRunner` protocol (`entmoot.pipeline.runner`) — swappable orchestrator interface
+- `NullPipelineRunner` — in-process synchronous runner; default; no extra deps required
+- `DagsterPipelineRunner` — Dagster-backed runner; requires `uv sync --extra dagster`
+- `FalkorDBResource` — Dagster `ConfigurableResource` for FalkorDB connections in assets
+- `wikidata_import` Dagster asset + `wikidata_import_job` + `nightly_wikidata_schedule`
+- `GET /admin/pipelines/runs/{run_id}` — poll pipeline run status
+- `tests/test_pipeline.py` — protocol-level tests for `NullPipelineRunner`
 
 ### Changed
 - Replaced Neo4j with FalkorDB per ADR-005; uses native async client (`falkordb.asyncio`)
@@ -33,5 +41,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Schema init uses FalkorDB Python API (`create_node_unique_constraint`, `create_node_fulltext_index`)
 - Config vars renamed from `NEO4J_*` to `FALKORDB_*`; default port 6379
 - Integration tests skip gracefully when FalkorDB server is unavailable
+- `POST /admin/import/wikidata` response changed from `WikidataImportResult` to `PipelineRun`
+  (with `result` field containing the counts when `status="success"`)
 - `Fact` renamed to `Value` throughout (node label, models, routes, API); "fact" implies
   truth, "value" is neutral about provenance and verification status
